@@ -1,0 +1,60 @@
+@import "tailwindcss";
+
+:root {
+  --app-bg: #000000;
+  --app-surface: #121212;
+  --app-surface-hover: #181818;
+  --app-border: #282828;
+  --app-accent: #1DB954;
+  --app-accent-hover: #1ed760;
+  --app-accent-text: #000000;
+  --app-accent-glow: rgba(29, 185, 84, 0.4);
+  --app-text-primary: #ffffff;
+  --app-text-secondary: #b3b3b3;
+  --app-text-muted: #6a6a6a;
+  --app-font: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  --app-radius: 16px;
+}
+
+@layer base {
+  body {
+    background-color: var(--app-bg);
+    color: var(--app-text-primary);
+    font-family: var(--app-font);
+    transition: background-color 0.25s ease, color 0.25s ease;
+  }
+}
+
+.perspective-1000 {
+  perspective: 1000px;
+}
+
+.transform-style-3d {
+  transform-style: preserve-3d;
+}
+
+.backface-hidden {
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+.rotate-y-180 {
+  transform: rotateY(180deg);
+}
+
+/* Custom subtle scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--app-border, rgba(148, 163, 184, 0.25));
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--app-accent, rgba(148, 163, 184, 0.4));
+}
+

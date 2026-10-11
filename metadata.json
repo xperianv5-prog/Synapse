@@ -1,0 +1,10 @@
+{
+  "name": "Remix Recall by Dr Navaei",
+  "description": "Modern Android flashcard app with multimedia cards, audio recording, STT/TTS, modular Leitner \u0026 SM-2 spaced repetition, smooth 3D flip review, PDF to cards AI generator, and version-controlled community deck sharing.",
+  "requestFramePermissions": [
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
