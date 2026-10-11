@@ -16,13 +16,16 @@ import { AuthModal } from './components/AuthModal';
 import { UserProfileModal } from './components/UserProfileModal';
 import { SkinSelectorModal } from './components/SkinSelectorModal';
 import { SettingsView } from './components/SettingsView';
+import { AiStudioView } from './components/AiStudioView';
 
-import { Deck, Flashcard, CommunityDeck } from './types';
+import { Deck, Flashcard, CommunityDeck, StudyResource, ProposedCard } from './types';
 import {
   loadStoredDecks,
   saveStoredDecks,
   loadStoredCards,
   saveStoredCards,
+  loadStoredResources,
+  saveStoredResources,
 } from './utils/storage';
 import { getAlgorithm } from './algorithms/spacedRepetition';
 import {
@@ -35,6 +38,8 @@ import { getCurrentUser, UserProfile } from './utils/auth';
 export default function App() {
   const [decks, setDecks] = useState<Deck[]>(loadStoredDecks);
   const [cards, setCards] = useState<Flashcard[]>(loadStoredCards);
+  const [resources, setResources] = useState<StudyResource[]>(loadStoredResources);
+  const [isDeckEditMode, setIsDeckEditMode] = useState<boolean>(false);
 
   // Appearance & Studio state
   const [appearance, setAppearance] = useState<AppearanceSettings>(loadAppearanceSettings);
@@ -90,6 +95,10 @@ export default function App() {
   useEffect(() => {
     saveStoredCards(cards);
   }, [cards]);
+
+  useEffect(() => {
+    saveStoredResources(resources);
+  }, [resources]);
 
   // Derived selected deck and reviewing deck
   const selectedDeck = useMemo(() => {
@@ -161,14 +170,14 @@ export default function App() {
     }
   };
 
-  const handleSaveBatchCards = (newCardsData: Partial<Flashcard>[]) => {
+  const handleSaveBatchCards = (newCardsData: any[]) => {
     if (newCardsData.length === 0) return;
     const now = new Date().toISOString();
     const createdCards: Flashcard[] = newCardsData.map((cd, index) => ({
       id: `card-${Date.now()}-${index}`,
       deckId: cd.deckId || targetDeckForCard || selectedDeckId || decks[0]?.id || 'default',
-      front: cd.front || { text: '' },
-      back: cd.back || { text: '' },
+      front: typeof cd.front === 'string' ? { text: cd.front } : (cd.front || { text: '' }),
+      back: typeof cd.back === 'string' ? { text: cd.back } : (cd.back || { text: '' }),
       hint: cd.hint,
       tags: cd.tags || [],
       createdAt: now,
@@ -330,6 +339,16 @@ export default function App() {
     showToast(`Deck "${newDeck.title}" created`);
   };
 
+  const handleToggleShareDeck = (deck: Deck) => {
+    const nextShared = !deck.isCommunityShared;
+    setDecks(prev =>
+      prev.map(d =>
+        d.id === deck.id ? { ...d, isCommunityShared: nextShared } : d
+      )
+    );
+    showToast(nextShared ? `Deck "${deck.title}" shared to Community` : `Deck "${deck.title}" is now private`);
+  };
+
   const handleUpdateDeck = (updatedDeck: Deck) => {
     setDecks(prev => prev.map(d => (d.id === updatedDeck.id ? updatedDeck : d)));
     showToast(`Deck updated`);
@@ -343,9 +362,37 @@ export default function App() {
     showToast('Deck deleted');
   };
 
+  const [batchReviewSession, setBatchReviewSession] = useState<{ deck: Deck; cards: Flashcard[] } | null>(null);
+
   // Review sessions
   const handleStartReviewDeck = (deck: Deck) => {
     setReviewingDeckId(deck.id);
+  };
+
+  const handleStartBatchReview = (deckIds: string[]) => {
+    if (deckIds.length === 0) return;
+    const batchCards = cards.filter(c => deckIds.includes(c.deckId));
+    if (batchCards.length === 0) {
+      showToast('No cards found in selected decks');
+      return;
+    }
+    const batchDeck: Deck = {
+      id: `batch-${Date.now()}`,
+      title: `Batch Review (${deckIds.length} Decks)`,
+      description: 'Merged review session across selected decks',
+      category: 'Batch Review',
+      tags: ['Batch'],
+      algorithm: 'leitner',
+      color: 'from-indigo-600 to-purple-600',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      cardCount: batchCards.length,
+      version: '1.0.0',
+      versionHistory: [],
+      isCommunityShared: false,
+      sharingControl: { isPublic: false, allowRemix: true, authorName: currentUser?.name || 'You', license: 'CC-BY-SA 4.0' },
+    };
+    setBatchReviewSession({ deck: batchDeck, cards: batchCards });
   };
 
   // AI Cards Approved from PDF/Notes
@@ -438,6 +485,88 @@ export default function App() {
     showToast(`Added "${commDeck.title}" with ${newCards.length} cards to your library`);
   };
 
+  // Study Resources Container handlers
+  const handleAddResource = (resource: StudyResource) => {
+    setResources(prev => [resource, ...prev]);
+  };
+
+  const handleRemoveResource = (resourceId: string) => {
+    setResources(prev => prev.filter(r => r.id !== resourceId));
+  };
+
+  const handleUpdateResource = (updated: StudyResource) => {
+    setResources(prev => prev.map(r => r.id === updated.id ? updated : r));
+  };
+
+  const handleAddCardsToDeck = (deckId: string, newCardsData: Partial<Flashcard>[]) => {
+    const now = new Date().toISOString();
+    const createdCards: Flashcard[] = newCardsData.map((cd, index) => ({
+      id: `card-${Date.now()}-${index}`,
+      deckId,
+      front: cd.front || { text: '' },
+      back: cd.back || { text: '' },
+      hint: cd.hint,
+      tags: cd.tags || ['AI-Study'],
+      createdAt: now,
+      updatedAt: now,
+      lastReviewed: null,
+      lapseCount: 0,
+      leitnerBox: 1,
+      repetitions: 0,
+      interval: 0,
+      easeFactor: 2.5,
+      dueDate: now,
+      reviewCount: 0,
+    }));
+
+    setCards(prev => [...createdCards, ...prev]);
+    setDecks(prev =>
+      prev.map(d => d.id === deckId ? { ...d, cardCount: (d.cardCount || 0) + createdCards.length } : d)
+    );
+    showToast(`Added ${createdCards.length} cards to deck`);
+  };
+
+  const handleCreateDeckWithCards = (title: string, category: string, cardsToInclude: (Partial<Flashcard> | ProposedCard)[]) => {
+    const newDeckId = `deck-ai-${Date.now()}`;
+    const now = new Date().toISOString();
+    const newDeck: Deck = {
+      id: newDeckId,
+      title: title.trim() || 'AI Generated Deck',
+      description: 'Created with Recall AI tutor',
+      category: category.trim() || 'General',
+      tags: ['AI-Created'],
+      algorithm: 'sm2',
+      color: 'from-purple-600 to-indigo-600',
+      createdAt: now,
+      updatedAt: now,
+      cardCount: cardsToInclude.length,
+      version: '1.0.0',
+      versionHistory: [
+        {
+          version: '1.0.0',
+          date: now.split('T')[0],
+          notes: 'Initial generation with AI',
+          cardsCount: cardsToInclude.length,
+        },
+      ],
+      isCommunityShared: false, // Default to private as requested
+      sharingControl: {
+        isPublic: false,
+        allowRemix: true,
+        authorName: currentUser?.name || 'You',
+        license: 'CC-BY-SA 4.0',
+      },
+    };
+
+    setDecks(prev => [newDeck, ...prev]);
+    handleAddCardsToDeck(newDeckId, cardsToInclude as any);
+  };
+
+  const handleEditDeckCards = (deck: Deck) => {
+    setSelectedDeckId(deck.id);
+    setIsDeckEditMode(true);
+  };
+
   const handleSelectSkin = (skinId: string, customAccent?: string | null) => {
     const s = setActiveSkin(skinId, customAccent);
     setActiveSkinState(s);
@@ -494,8 +623,16 @@ export default function App() {
       {/* Main Screen Content */}
       <main className="flex-1 w-full max-w-4xl mx-auto overflow-x-hidden">
         
-        {/* ACTIVE REVIEW MODE (Full Screen Focus) */}
-        {reviewingDeck ? (
+        {batchReviewSession ? (
+          <ReviewSession
+            key={batchReviewSession.deck.id}
+            deck={batchReviewSession.deck}
+            cards={batchReviewSession.cards}
+            activeSkin={activeSkin}
+            onFinish={() => setBatchReviewSession(null)}
+            onUpdateCard={handleUpdateCardProgress}
+          />
+        ) : reviewingDeck ? (
           <ReviewSession
             key={reviewingDeck.id}
             deck={reviewingDeck}
@@ -507,11 +644,16 @@ export default function App() {
         ) : selectedDeck ? (
           /* DECK DETAIL VIEW */
           <DeckDetailView
+            key={`${selectedDeck.id}-${isDeckEditMode ? 'edit' : 'view'}`}
             deck={selectedDeck}
             cards={selectedDeckCards}
             availableDecks={decks}
             activeSkin={activeSkin}
-            onBack={() => setSelectedDeckId(null)}
+            initialEditMode={isDeckEditMode}
+            onBack={() => {
+              setSelectedDeckId(null);
+              setIsDeckEditMode(false);
+            }}
             onStartReview={() => handleStartReviewDeck(selectedDeck)}
             onOpenCardEditor={(card) => {
               setCardToEdit(card || null);
@@ -535,6 +677,7 @@ export default function App() {
               setDeckToConfigure(selectedDeck);
               setSettingsModalOpen(true);
             }}
+            onDeleteDeck={handleDeleteDeck}
           />
         ) : (
           /* TAB NAVIGATION VIEWS */
@@ -550,13 +693,20 @@ export default function App() {
                 onOpenSkinSelector={() => setSkinSelectorModalOpen(true)}
                 onCycleSkin={handleCycleSkin}
                 onOpenSettings={() => setCurrentTab('settings')}
-                onSelectDeck={(deck) => setSelectedDeckId(deck.id)}
+                onSelectDeck={(deck) => {
+                  setIsDeckEditMode(false);
+                  setSelectedDeckId(deck.id);
+                }}
+                onEditDeckCards={handleEditDeckCards}
+                onDeleteDeck={handleDeleteDeck}
                 onStartReviewDeck={handleStartReviewDeck}
+                onStartBatchReview={handleStartBatchReview}
                 onCreateDeck={handleCreateDeck}
                 onOpenAiGenerator={(deck) => {
                   setTargetDeckForAi({ id: deck.id, title: deck.title });
                   setAiGeneratorOpen(true);
                 }}
+                onToggleShareDeck={handleToggleShareDeck}
               />
             )}
 
@@ -578,55 +728,17 @@ export default function App() {
             )}
 
             {currentTab === 'ai-generator' && (
-              <div className="max-w-xl mx-auto px-4 py-8 text-center space-y-4">
-                <h2 className="text-xl font-bold" style={{ color: activeSkin.colors.textPrimary }}>AI Flashcard Generator</h2>
-                <p className="text-xs" style={{ color: activeSkin.colors.textSecondary }}>
-                  Select a destination deck to generate multimedia flashcards from PDFs, notes, or medical topics
-                </p>
-                <div className="space-y-2.5 text-left">
-                  {decks.map(deck => (
-                    <div
-                      key={deck.id}
-                      onClick={() => {
-                        setTargetDeckForAi({ id: deck.id, title: deck.title });
-                        setAiGeneratorOpen(true);
-                      }}
-                      className="p-4 border rounded-2xl cursor-pointer flex items-center justify-between transition-all hover:shadow-lg"
-                      style={{
-                        backgroundColor: activeSkin.colors.surface,
-                        borderColor: activeSkin.colors.border,
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.borderColor = activeSkin.colors.accent;
-                        e.currentTarget.style.boxShadow = `0 4px 16px -4px ${activeSkin.colors.accentGlow}`;
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.borderColor = activeSkin.colors.border;
-                        e.currentTarget.style.boxShadow = 'none';
-                      }}
-                    >
-                      <div>
-                        <span className="text-sm font-bold block" style={{ color: activeSkin.colors.textPrimary }}>
-                          {deck.title}
-                        </span>
-                        <span className="text-xs" style={{ color: activeSkin.colors.textSecondary }}>
-                          {deck.category}
-                        </span>
-                      </div>
-                      <span
-                        className="px-3 py-1.5 border rounded-xl text-xs font-bold transition-all shadow-sm"
-                        style={{
-                          backgroundColor: `${activeSkin.colors.accent}1a`,
-                          borderColor: `${activeSkin.colors.accent}33`,
-                          color: activeSkin.colors.accent,
-                        }}
-                      >
-                        Generate Cards
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
+              <AiStudioView
+                decks={decks}
+                resources={resources}
+                onAddResource={handleAddResource}
+                onRemoveResource={handleRemoveResource}
+                onUpdateResource={handleUpdateResource}
+                onAddCardsToDeck={handleAddCardsToDeck}
+                onCreateDeckWithCards={handleCreateDeckWithCards}
+                activeSkin={activeSkin}
+                showToast={showToast}
+              />
             )}
 
             {currentTab === 'stats' && (

@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import {
   PlayCircle, Plus, Sparkles, Settings, UploadCloud, Search,
   ArrowLeft, ArrowUpDown, Volume2, Image as ImageIcon,
@@ -26,6 +26,8 @@ interface DeckDetailViewProps {
   onOpenAiGenerator: () => void;
   onOpenPublish: () => void;
   onOpenSettings: () => void;
+  onDeleteDeck?: (deckId: string) => void;
+  initialEditMode?: boolean;
 }
 
 export function DeckDetailView({
@@ -44,11 +46,20 @@ export function DeckDetailView({
   onOpenAiGenerator,
   onOpenPublish,
   onOpenSettings,
+  onDeleteDeck,
+  initialEditMode = false,
 }: DeckDetailViewProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [filterBox, setFilterBox] = useState<string>('all');
   const [filterTag, setFilterTag] = useState<string>('all');
+  const [isEditingCardsMode, setIsEditingCardsMode] = useState(initialEditMode);
+  const [isConfirmingDeleteDeck, setIsConfirmingDeleteDeck] = useState(false);
+
+  // Synchronize when opened with initialEditMode flag
+  useEffect(() => {
+    setIsEditingCardsMode(initialEditMode);
+  }, [initialEditMode]);
 
   // Quick AI Prompt State
   const [isQuickAiOpen, setIsQuickAiOpen] = useState(false);
@@ -265,6 +276,22 @@ export function DeckDetailView({
         </button>
 
         <div className="flex items-center gap-2">
+          {/* Edit Mode Toggle Button */}
+          <button
+            type="button"
+            onClick={() => setIsEditingCardsMode(!isEditingCardsMode)}
+            className="px-3 py-1.5 rounded-2xl border text-xs font-bold flex items-center gap-1.5 transition-all active:scale-95 shadow-xs"
+            style={{
+              backgroundColor: isEditingCardsMode ? (activeSkin?.colors.accent || '#6366f1') : (activeSkin ? activeSkin.colors.surface : undefined),
+              borderColor: isEditingCardsMode ? (activeSkin?.colors.accent || '#6366f1') : (activeSkin ? activeSkin.colors.border : undefined),
+              color: isEditingCardsMode ? (activeSkin?.colors.accentText || '#ffffff') : (activeSkin ? activeSkin.colors.accent : undefined),
+            }}
+            title={isEditingCardsMode ? 'Exit card editing mode' : 'Enter card editing mode'}
+          >
+            <Edit3 className="w-3.5 h-3.5" />
+            <span>{isEditingCardsMode ? 'Done Editing' : 'Edit Cards'}</span>
+          </button>
+
           <button
             type="button"
             onClick={onOpenPublish}
@@ -289,8 +316,59 @@ export function DeckDetailView({
           >
             <Settings className="w-5 h-5" />
           </button>
+          {onDeleteDeck && (
+            <button
+              type="button"
+              onClick={() => setIsConfirmingDeleteDeck(true)}
+              className="p-2 rounded-2xl transition-all hover:bg-rose-500/15 text-slate-400 hover:text-rose-400 cursor-pointer active:scale-95"
+              style={{
+                backgroundColor: activeSkin ? activeSkin.colors.surface : undefined,
+              }}
+              title="Delete Deck"
+              aria-label="Delete Deck"
+            >
+              <Trash2 className="w-5 h-5" />
+            </button>
+          )}
         </div>
       </div>
+
+      {/* Editing Mode Banner */}
+      {isEditingCardsMode && (
+        <div
+          className="p-3.5 sm:p-4 rounded-3xl border shadow-xl flex items-center justify-between gap-3 text-xs animate-in fade-in"
+          style={{
+            backgroundColor: activeSkin ? `${activeSkin.colors.accent}15` : 'rgba(99, 102, 241, 0.1)',
+            borderColor: activeSkin?.colors.accent || '#6366f1',
+          }}
+        >
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
+              <Edit3 className="w-4 h-4" />
+            </div>
+            <div>
+              <span className="font-bold block" style={{ color: activeSkin?.colors.textPrimary || '#ffffff' }}>
+                Card Editing Mode Active
+              </span>
+              <span className="text-[11px]" style={{ color: activeSkin?.colors.textSecondary || '#cbd5e1' }}>
+                Tap any card to edit, delete cards, or add new cards
+              </span>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => onOpenCardEditor()}
+            className="px-3.5 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1 shadow-md transition-all active:scale-95 shrink-0"
+            style={{
+              backgroundColor: activeSkin?.colors.accent || '#6366f1',
+              color: activeSkin?.colors.accentText || '#ffffff',
+            }}
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>Add Card</span>
+          </button>
+        </div>
+      )}
 
       {/* Deck Hero Banner Card */}
       <div className={`p-6 rounded-3xl bg-gradient-to-br ${deck.color || 'from-indigo-600 to-cyan-600'} text-white shadow-xl relative overflow-hidden`}>
@@ -698,10 +776,12 @@ export function DeckDetailView({
                 onClick={() => {
                   if (isSelectionMode) {
                     handleToggleCardSelection(card.id);
+                  } else if (isEditingCardsMode) {
+                    onOpenCardEditor(card);
                   }
                 }}
                 className={`border rounded-2xl p-4 transition-all flex items-start justify-between gap-3 group select-none ${
-                  isSelectionMode ? 'cursor-pointer' : 'hover:shadow-md'
+                  isSelectionMode || isEditingCardsMode ? 'cursor-pointer' : 'hover:shadow-md'
                 }`}
                 style={{
                   backgroundColor: isSelected
@@ -811,10 +891,10 @@ export function DeckDetailView({
                         borderColor: activeSkin ? activeSkin.colors.border : '#334155',
                         color: activeSkin ? activeSkin.colors.textPrimary : '#f8fafc',
                       }}
-                      title="Preview card"
+                      title="Edit card"
                     >
-                      <Eye className="w-3.5 h-3.5 shrink-0" style={{ color: activeSkin ? activeSkin.colors.accent : undefined }} />
-                      <span className="whitespace-nowrap">Preview</span>
+                      <Edit3 className="w-3.5 h-3.5 shrink-0" style={{ color: activeSkin ? activeSkin.colors.accent : undefined }} />
+                      <span className="whitespace-nowrap">Edit</span>
                     </button>
                     <button
                       type="button"
@@ -1143,6 +1223,77 @@ export function DeckDetailView({
               >
                 <FolderInput className="w-3.5 h-3.5" />
                 <span>Move {selectedCardIds.size} Cards</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Deck Confirmation Modal */}
+      {isConfirmingDeleteDeck && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div
+            className="border w-full max-w-md rounded-3xl p-6 shadow-2xl animate-in zoom-in-95 duration-200 transition-colors"
+            style={{
+              backgroundColor: activeSkin ? activeSkin.colors.surface : '#0f172a',
+              borderColor: activeSkin ? activeSkin.colors.border : '#1e293b',
+              color: activeSkin ? activeSkin.colors.textPrimary : '#f8fafc',
+            }}
+          >
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-2xl bg-rose-500/15 border border-rose-500/30 text-rose-400 flex items-center justify-center shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h2 className="text-base font-bold" style={{ color: activeSkin ? activeSkin.colors.textPrimary : '#f8fafc' }}>
+                  Delete Deck
+                </h2>
+                <p className="text-xs" style={{ color: activeSkin ? activeSkin.colors.textSecondary : '#94a3b8' }}>
+                  Confirm permanent deck removal
+                </p>
+              </div>
+            </div>
+
+            <div
+              className="p-3.5 rounded-2xl border mb-5 text-xs space-y-1.5"
+              style={{
+                backgroundColor: activeSkin ? activeSkin.colors.surfaceHover : '#1e293b',
+                borderColor: activeSkin ? activeSkin.colors.border : '#334155',
+              }}
+            >
+              <p className="font-semibold" style={{ color: activeSkin ? activeSkin.colors.textPrimary : '#f8fafc' }}>
+                Are you sure you want to delete <span className="font-bold underline">{deck.title}</span>?
+              </p>
+              <p style={{ color: activeSkin ? activeSkin.colors.textSecondary : '#94a3b8' }}>
+                This will permanently delete this deck and all{' '}
+                <strong className="text-rose-400">{cards.length} cards</strong> contained inside it. This action cannot be undone.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => setIsConfirmingDeleteDeck(false)}
+                className="px-4 py-2 text-xs font-semibold rounded-xl border transition-colors cursor-pointer"
+                style={{
+                  borderColor: activeSkin ? activeSkin.colors.border : '#334155',
+                  color: activeSkin ? activeSkin.colors.textSecondary : '#94a3b8',
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsConfirmingDeleteDeck(false);
+                  if (onDeleteDeck) {
+                    onDeleteDeck(deck.id);
+                  }
+                }}
+                className="px-4 py-2 text-xs font-bold rounded-xl bg-rose-600 hover:bg-rose-700 text-white flex items-center gap-1.5 shadow-lg shadow-rose-950/40 transition-all active:scale-95 cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Delete Deck</span>
               </button>
             </div>
           </div>

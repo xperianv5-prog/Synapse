@@ -192,7 +192,7 @@ export function StatsView({ decks, cards, activeSkin }: StatsViewProps) {
         </div>
 
         <div className="space-y-2">
-          {decks.map(deck => {
+          {decks.map((deck, idx) => {
             const deckCards = cards.filter(c => c.deckId === deck.id);
             const algo = getAlgorithm(deck.algorithm);
             const due = deckCards.filter(c => algo.isDue(c)).length;
@@ -204,6 +204,7 @@ export function StatsView({ decks, cards, activeSkin }: StatsViewProps) {
                 style={{
                   backgroundColor: surfaceHover,
                   borderColor: borderColor,
+                  ...(idx === 1 ? { width: '300px' } : {}),
                 }}
               >
                 <div>

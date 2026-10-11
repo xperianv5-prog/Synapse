@@ -6,7 +6,7 @@ import {
   SUPPORTED_SPEECH_LANGUAGES,
   SpeechLanguage,
   startPreciseSpeechRecognition,
-  AudioRecorder,
+  Recorder,
   transcribeAudioWithGemini,
 } from '../utils/audio';
 import { Skin } from '../utils/skins';
@@ -34,7 +34,7 @@ export function SpeechToTextControl({
   const [micErrorMessage, setMicErrorMessage] = useState<string | null>(null);
 
   const recognitionRef = useRef<{ stop: () => void } | null>(null);
-  const audioRecorderRef = useRef<AudioRecorder | null>(null);
+  const audioRecorderRef = useRef<Recorder | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Close dropdown on click outside
@@ -80,7 +80,7 @@ export function SpeechToTextControl({
 
     if (precisionMode === 'gemini') {
       try {
-        const rec = new AudioRecorder();
+        const rec = new Recorder();
         audioRecorderRef.current = rec;
         await rec.start();
         setIsListening(true);
@@ -120,7 +120,7 @@ export function SpeechToTextControl({
       // If Web Speech not supported, automatically switch to Gemini speech recognition!
       setPrecisionMode('gemini');
       try {
-        const rec = new AudioRecorder();
+        const rec = new Recorder();
         audioRecorderRef.current = rec;
         await rec.start();
         setIsListening(true);

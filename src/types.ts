@@ -125,3 +125,48 @@ export interface ReviewQueueStats {
   mastered: number;
   total: number;
 }
+
+export interface StudyResource {
+  id: string;
+  title: string;
+  type: 'pdf' | 'text' | 'recording' | 'document' | 'web';
+  content: string; // extracted text content or transcript
+  fileData?: string; // base64 or audio data uri
+  mimeType?: string;
+  fileSize?: string;
+  createdAt: string;
+  updatedAt: string;
+  tags?: string[];
+  durationSeconds?: number;
+  isTranscribed?: boolean;
+  notes?: string; // generated study notes
+  sourceUrl?: string;
+}
+
+export interface ProposedCard {
+  front: string;
+  back: string;
+  hint?: string;
+  tags?: string[];
+}
+
+export interface ProposedDeck {
+  title: string;
+  description: string;
+  category: string;
+  tags?: string[];
+  cards: ProposedCard[];
+  saved?: boolean;
+}
+
+export interface ChatMessage {
+  id: string;
+  role: 'user' | 'model';
+  text: string;
+  timestamp: string;
+  groundingSources?: { title: string; uri: string }[];
+  searchQueries?: string[];
+  modelUsed?: string;
+  resourceId?: string;
+  proposedDeck?: ProposedDeck;
+}

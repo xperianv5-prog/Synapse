@@ -1,3 +1,5 @@
+import { useState, useEffect } from 'react';
+
 /**
  * Speech Recognition and Language Definition
  */
@@ -56,15 +58,33 @@ export async function blobToBase64(blob: Blob, raw: boolean = false): Promise<st
   });
 }
 
-export class AudioRecorder {
+export class Recorder {
   private mediaRecorder: MediaRecorder | null = null;
   private audioChunks: Blob[] = [];
   private startTime: number = 0;
   private stream: MediaStream | null = null;
+  private audioContext: AudioContext | null = null;
+  private analyser: AnalyserNode | null = null;
+  private sourceNode: MediaStreamAudioSourceNode | null = null;
 
   async start(): Promise<void> {
     this.audioChunks = [];
     this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+    // Set up Web Audio API Analyser for real-time soundwave bar visualization
+    try {
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      if (AudioContextClass) {
+        this.audioContext = new AudioContextClass();
+        this.analyser = this.audioContext.createAnalyser();
+        this.analyser.fftSize = 64;
+        this.analyser.smoothingTimeConstant = 0.8;
+        this.sourceNode = this.audioContext.createMediaStreamSource(this.stream);
+        this.sourceNode.connect(this.analyser);
+      }
+    } catch (err) {
+      console.warn('AudioContext / AnalyserNode setup warning:', err);
+    }
     
     const mimeTypes = ['audio/webm', 'audio/mp4', 'audio/ogg', 'audio/wav'];
     const selectedType = mimeTypes.find(type => MediaRecorder.isTypeSupported(type)) || '';
@@ -83,6 +103,16 @@ export class AudioRecorder {
     this.mediaRecorder.start(100);
   }
 
+  getAnalyser(): AnalyserNode | null {
+    return this.analyser;
+  }
+
+  getByteFrequencyData(array: Uint8Array): void {
+    if (this.analyser) {
+      this.analyser.getByteFrequencyData(array as any);
+    }
+  }
+
   async stop(): Promise<AudioRecordingResult> {
     return new Promise((resolve, reject) => {
       if (!this.mediaRecorder) {
@@ -94,6 +124,8 @@ export class AudioRecorder {
         const blob = new Blob(this.audioChunks, { type: mimeType });
         const duration = Math.max(1, Math.round((Date.now() - this.startTime) / 1000));
         const base64Data = await blobToBase64(blob, false);
+
+        this.cleanupAudioContext();
 
         if (this.stream) {
           this.stream.getTracks().forEach(track => track.stop());
@@ -118,13 +150,145 @@ export class AudioRecorder {
 
   cancel(): void {
     if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
-      this.mediaRecorder.stop();
+      try {
+        this.mediaRecorder.stop();
+      } catch {}
     }
+    this.cleanupAudioContext();
     if (this.stream) {
       this.stream.getTracks().forEach(track => track.stop());
       this.stream = null;
     }
   }
+
+  private cleanupAudioContext(): void {
+    try {
+      if (this.sourceNode) {
+        this.sourceNode.disconnect();
+        this.sourceNode = null;
+      }
+      if (this.audioContext && this.audioContext.state !== 'closed') {
+        this.audioContext.close();
+        this.audioContext = null;
+      }
+      this.analyser = null;
+    } catch (err) {
+      console.warn('Error cleaning up audio context:', err);
+    }
+  }
+}
+
+// Global shared recorder instance to support persistent background recording across tabs
+export const globalRecorder = new Recorder();
+
+export interface GlobalRecordingState {
+  isRecording: boolean;
+  seconds: number;
+  result: AudioRecordingResult | null;
+  error: string | null;
+}
+
+type RecordingListener = (state: GlobalRecordingState) => void;
+
+class AudioRecordingManager {
+  private recorder = globalRecorder;
+  private timer: any = null;
+  private seconds = 0;
+  private result: AudioRecordingResult | null = null;
+  private error: string | null = null;
+  private listeners = new Set<RecordingListener>();
+
+  getRecorder(): Recorder {
+    return this.recorder;
+  }
+
+  getState(): GlobalRecordingState {
+    return {
+      isRecording: this.recorder.isRecording(),
+      seconds: this.seconds,
+      result: this.result,
+      error: this.error,
+    };
+  }
+
+  subscribe(listener: RecordingListener): () => void {
+    this.listeners.add(listener);
+    listener(this.getState());
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+
+  private notify(): void {
+    const st = this.getState();
+    this.listeners.forEach((fn) => fn(st));
+  }
+
+  async start(): Promise<void> {
+    try {
+      this.error = null;
+      this.result = null;
+      this.seconds = 0;
+      await this.recorder.start();
+      if (this.timer) clearInterval(this.timer);
+      this.timer = setInterval(() => {
+        this.seconds += 1;
+        this.notify();
+      }, 1000);
+      this.notify();
+    } catch (err: any) {
+      this.error = err.message || 'Microphone access denied';
+      this.notify();
+      throw err;
+    }
+  }
+
+  async stop(): Promise<AudioRecordingResult> {
+    if (this.timer) {
+      clearInterval(this.timer);
+      this.timer = null;
+    }
+    const res = await this.recorder.stop();
+    this.result = res;
+    this.notify();
+    return res;
+  }
+
+  cancel(): void {
+    if (this.timer) {
+      clearInterval(this.timer);
+      this.timer = null;
+    }
+    this.recorder.cancel();
+    this.seconds = 0;
+    this.notify();
+  }
+
+  clearResult(): void {
+    this.result = null;
+    this.notify();
+  }
+}
+
+export const recordingManager = new AudioRecordingManager();
+
+export function useAudioRecording() {
+  const [state, setState] = useState<GlobalRecordingState>(() => recordingManager.getState());
+
+  useEffect(() => {
+    return recordingManager.subscribe((newState) => {
+      setState(newState);
+    });
+  }, []);
+
+  return {
+    ...state,
+    recorder: recordingManager.getRecorder(),
+    start: () => recordingManager.start(),
+    stop: () => recordingManager.stop(),
+    cancel: () => recordingManager.cancel(),
+    clearResult: () => recordingManager.clearResult(),
+  };
 }
 
 /**

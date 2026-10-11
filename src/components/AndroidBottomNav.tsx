@@ -15,7 +15,7 @@ export function AndroidBottomNav({ currentTab, onTabChange, dueCardsCount, activ
     { id: 'decks' as TabType, label: 'Decks', icon: Layers },
     { id: 'review' as TabType, label: 'Review', icon: PlayCircle, badge: dueCardsCount > 0 ? dueCardsCount : undefined },
     { id: 'community' as TabType, label: 'Community', icon: Globe },
-    { id: 'ai-generator' as TabType, label: 'AI Studio', icon: Sparkles },
+    { id: 'ai-generator' as TabType, label: 'AI & Resources', icon: Sparkles },
     { id: 'stats' as TabType, label: 'Stats', icon: BarChart3 },
   ];
 

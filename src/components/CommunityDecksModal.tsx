@@ -398,7 +398,7 @@ export function CommunityDecksModal({ onImportDeck, userDeckTitles, activeSkin }
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {decks.map((deck) => (
+          {decks.map((deck, idx) => (
             <div
               key={deck.id}
               className="border rounded-3xl p-5 flex flex-col justify-between transition-all hover:shadow-xl group"
@@ -478,7 +478,10 @@ export function CommunityDecksModal({ onImportDeck, userDeckTitles, activeSkin }
               {/* Card Footer: Metrics & Preview Button */}
               <div
                 className="pt-3 mt-4 border-t flex items-center justify-between"
-                style={{ borderColor: borderColor }}
+                style={{
+                  borderColor: borderColor,
+                  ...(idx === 1 ? { width: '300px' } : {}),
+                }}
               >
                 <div className="flex items-center gap-3 text-xs" style={{ color: textSecondary }}>
                   <span className="font-mono text-[11px]" style={{ color: textMuted }}>{deck.cardCount} cards</span>

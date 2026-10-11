@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { Mic, Square, Trash2, Check, AlertCircle } from 'lucide-react';
-import { AudioRecorder, AudioRecordingResult } from '../utils/audio';
+import { Recorder, AudioRecordingResult } from '../utils/audio';
 
 interface AudioRecorderWidgetProps {
   onAudioRecorded: (result: AudioRecordingResult) => void;
@@ -19,7 +19,7 @@ export function AudioRecorderWidget({
   const [recordedResult, setRecordedResult] = useState<AudioRecordingResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const recorderRef = useRef<AudioRecorder | null>(null);
+  const recorderRef = useRef<Recorder | null>(null);
   const timerRef = useRef<any>(null);
 
   useEffect(() => {
@@ -32,7 +32,7 @@ export function AudioRecorderWidget({
   const handleStartRecording = async () => {
     setError(null);
     try {
-      const recorder = new AudioRecorder();
+      const recorder = new Recorder();
       recorderRef.current = recorder;
       await recorder.start();
       setIsRecording(true);
@@ -113,8 +113,13 @@ export function AudioRecorderWidget({
         <div className="flex items-center justify-between bg-rose-950/40 border border-rose-800/50 rounded-xl p-3">
           <div className="flex items-center gap-3">
             <span className="w-3.5 h-3.5 rounded-full bg-rose-500 animate-ping inline-block" />
+            <div className="flex items-center gap-0.5 h-4">
+              {[40, 75, 55, 90, 60, 80, 45, 95].map((h, i) => (
+                <div key={i} className="w-1 bg-rose-400 animate-pulse rounded-full" style={{ height: `${h}%`, animationDelay: `${i * 100}ms` }} />
+              ))}
+            </div>
             <span className="text-sm font-mono font-semibold text-rose-200">
-              Recording: {formatTimer(recordSeconds)}
+              {formatTimer(recordSeconds)}
             </span>
           </div>
           <button

@@ -118,7 +118,7 @@ function cleanAndParseJson<T>(rawText: string | undefined, defaultValue: T): T {
 async function generateContentWithRetry(
   ai: GoogleGenAI,
   params: any,
-  modelsToTry: string[] = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'],
+  modelsToTry: string[] = ['gemini-3.8-flash', 'gemini-3.1-flash-lite', 'gemini-2.5-flash'],
   maxRetriesPerModel: number = 1
 ) {
   let lastError: any = null;
@@ -447,6 +447,252 @@ async function startServer() {
   // AI Endpoints (Gemini API Server-Side)
   // -------------------------------------------------------------
 
+  // List available models with latency and availability status
+  app.get('/api/ai/models', (_req: Request, res: Response) => {
+    res.json({
+      success: true,
+      models: [
+        {
+          id: 'auto',
+          name: 'Auto: Highest Availability & Lowest Latency',
+          description: 'Automatically routes to the fastest available free model (Gemini 3.8 Flash / 3.1 Flash-Lite)',
+          tier: 'Free',
+          latency: '< 500ms',
+          isDefault: true,
+        },
+        {
+          id: 'gemini-3.1-flash-lite',
+          name: 'Gemini 3.1 Flash-Lite',
+          description: 'Ultra-low latency, highest availability, rapid responses for lecture notes and prompt Q&A',
+          tier: 'Free',
+          latency: '~350ms',
+        },
+        {
+          id: 'gemini-3.8-flash',
+          name: 'Gemini 3.8 Flash',
+          description: 'High-speed cognitive reasoning, complex prompt answering, search grounding & cards',
+          tier: 'Free',
+          latency: '~550ms',
+        },
+        {
+          id: 'gemini-flash-latest',
+          name: 'Gemini Flash Latest',
+          description: 'High throughput, low-latency free model for lecture notes and prompt Q&A',
+          tier: 'Free',
+          latency: '~480ms',
+        },
+        {
+          id: 'gemini-3.1-pro-preview',
+          name: 'Gemini 3.1 Pro (Advanced Reasoning)',
+          description: 'Deep STEM reasoning, intricate clinical problem solving (Paid Account / Cloud key)',
+          tier: 'Paid',
+          latency: '~1.8s',
+        },
+      ],
+    });
+  });
+
+  // AI Interactive Prompt & Chat with Web Search Grounding & Resource Analysis
+  app.post('/api/ai/chat', async (req: Request, res: Response) => {
+    try {
+      const {
+        prompt,
+        messages = [],
+        resourceContext,
+        enableSearch = false,
+        model = 'auto',
+      } = req.body;
+
+      if (!prompt && (!messages || messages.length === 0)) {
+        return res.status(400).json({ success: false, error: 'Prompt or message is required' });
+      }
+
+      const ai = getGenAI();
+
+      // Resolve models to try based on user selection
+      let modelsToTry = ['gemini-3.8-flash', 'gemini-3.1-flash-lite', 'gemini-flash-latest'];
+      if (model && model !== 'auto') {
+        modelsToTry = [model, 'gemini-3.8-flash', 'gemini-3.1-flash-lite', 'gemini-flash-latest'];
+      }
+
+      let systemInstruction = `You are Recall AI, a high-yield academic tutor and spaced-repetition study specialist.
+Help users understand concepts, analyze uploaded study resources, lecture audio transcripts, and create spaced repetition strategies.
+Provide structured, crisp explanations with Markdown formatting, bullet points, and key takeaways highlighted.
+
+If the user asks to generate, create, make, or suggest flashcards or a deck of cards (e.g. "Create a deck for...", "Make 6 cards about...", "Generate flashcards on..."):
+Provide an encouraging introductory explanation, and also propose a structured deck at the very end of your response using this exact delimiter format:
+:::DECK_PROPOSAL_START:::
+{
+  "title": "Title of Deck",
+  "category": "Science / Medicine / Languages / etc.",
+  "description": "Crisp overview of the deck cards",
+  "cards": [
+    {
+      "front": "Front question or cloze prompt",
+      "back": "Definitive answer with key terms",
+      "hint": "Optional hint"
+    }
+  ]
+}
+:::DECK_PROPOSAL_END:::
+This will render an interactive proposal card allowing the user to save the deck to their private library with one click.`;
+
+      if (resourceContext && typeof resourceContext === 'string' && resourceContext.trim().length > 0) {
+        systemInstruction += `\n\nActive Study Material / Resource Provided by User:\n"""\n${resourceContext.substring(0, 80000)}\n"""\nAnswer questions directly based on this material when relevant, citing specific sections, equations, or concepts.`;
+      }
+
+      const contents: any[] = [];
+      if (Array.isArray(messages) && messages.length > 0) {
+        for (const msg of messages) {
+          contents.push({
+            role: msg.role === 'user' ? 'user' : 'model',
+            parts: [{ text: msg.text || msg.content || '' }],
+          });
+        }
+      }
+
+      if (prompt) {
+        contents.push({
+          role: 'user',
+          parts: [{ text: prompt }],
+        });
+      }
+
+      const config: any = {
+        systemInstruction,
+      };
+
+      if (enableSearch) {
+        config.tools = [{ googleSearch: {} }];
+      }
+
+      const response = await generateContentWithRetry(
+        ai,
+        {
+          contents,
+          config,
+        },
+        modelsToTry,
+        1
+      );
+
+      let replyText = response.text || '';
+      let proposedDeck: any = null;
+
+      // Extract proposed deck if delimited block exists
+      const deckStartIdx = replyText.indexOf(':::DECK_PROPOSAL_START:::');
+      const deckEndIdx = replyText.indexOf(':::DECK_PROPOSAL_END:::');
+      if (deckStartIdx !== -1 && deckEndIdx > deckStartIdx) {
+        const rawJson = replyText.substring(deckStartIdx + ':::DECK_PROPOSAL_START:::'.length, deckEndIdx).trim();
+        try {
+          proposedDeck = cleanAndParseJson(rawJson, null);
+          if (proposedDeck && Array.isArray(proposedDeck.cards) && proposedDeck.cards.length > 0) {
+            proposedDeck.saved = false;
+          } else {
+            proposedDeck = null;
+          }
+        } catch {
+          proposedDeck = null;
+        }
+        // Remove delimiter block from readable chat text
+        replyText = (replyText.substring(0, deckStartIdx) + replyText.substring(deckEndIdx + ':::DECK_PROPOSAL_END:::'.length)).trim();
+      }
+
+      const candidate = response.candidates?.[0];
+      const groundingMetadata = candidate?.groundingMetadata;
+      const groundingChunks = groundingMetadata?.groundingChunks || [];
+      const webSearchQueries = groundingMetadata?.webSearchQueries || [];
+
+      const sources = groundingChunks
+        .map((chunk: any) => ({
+          title: chunk.web?.title || 'Online Source',
+          uri: chunk.web?.uri || '',
+        }))
+        .filter((s: any) => Boolean(s.uri));
+
+      const uniqueSources: { title: string; uri: string }[] = [];
+      const seenUris = new Set<string>();
+      for (const s of sources) {
+        if (!seenUris.has(s.uri)) {
+          seenUris.add(s.uri);
+          uniqueSources.push(s);
+        }
+      }
+
+      res.json({
+        success: true,
+        reply: replyText,
+        proposedDeck,
+        modelUsed: modelsToTry[0],
+        groundingSources: uniqueSources,
+        searchQueries: webSearchQueries,
+      });
+    } catch (err: any) {
+      console.error('Error in AI Chat:', err);
+      const cleanError = extractCleanErrorMessage(err);
+      res.status(500).json({ success: false, error: cleanError });
+    }
+  });
+
+  // Generate structured study notes from lecture audio transcript or notes
+  app.post('/api/ai/generate-notes', async (req: Request, res: Response) => {
+    try {
+      const { text, title, model = 'auto' } = req.body;
+      if (!text || text.trim().length === 0) {
+        return res.status(400).json({ success: false, error: 'Text or lecture transcript is required' });
+      }
+
+      const ai = getGenAI();
+      let modelsToTry = ['gemini-3.8-flash', 'gemini-3.1-flash-lite', 'gemini-flash-latest'];
+      if (model && model !== 'auto') {
+        modelsToTry = [model, 'gemini-3.8-flash', 'gemini-3.1-flash-lite', 'gemini-flash-latest'];
+      }
+
+      const prompt = `You are an elite academic scribe and memory scientist.
+Transform the following lecture recording transcript or study material into structured, high-yield study notes.
+
+Material Title: ${title || 'Class Lecture / Study Session'}
+Source Text:
+"""
+${text.substring(0, 80000)}
+"""
+
+Please format your response in clean Markdown with:
+# ${title || 'Lecture Summary & Notes'}
+
+## 🎯 Executive Summary
+(Crisp 2-3 sentence core takeaway)
+
+## 🔑 Key Concepts & Definitions
+(Bulleted definitions with bold key terms)
+
+## 🧠 High-Yield Exam Takeaways
+(Critical facts, mnemonics, equations, or common pitfalls)
+
+## 📋 Suggested Spaced Repetition Flashcard Prompts
+(3-5 core questions to test recall)`;
+
+      const response = await generateContentWithRetry(
+        ai,
+        {
+          contents: prompt,
+        },
+        modelsToTry,
+        1
+      );
+
+      res.json({
+        success: true,
+        notes: response.text || '',
+        modelUsed: modelsToTry[0],
+      });
+    } catch (err: any) {
+      console.error('Error generating notes with Gemini:', err);
+      const cleanError = extractCleanErrorMessage(err);
+      res.status(500).json({ success: false, error: cleanError });
+    }
+  });
+
   // 1. Generate flashcards from notes, textbook, or PDF text
   app.post('/api/ai/generate-cards', async (req: Request, res: Response) => {
     try {
@@ -520,7 +766,7 @@ Return strictly valid JSON with an array of objects matching the schema.`;
               },
             },
           },
-          ['gemini-2.5-flash', 'gemini-2.0-flash'],
+          ['gemini-3.8-flash', 'gemini-3.1-flash-lite', 'gemini-flash-latest'],
           1
         );
 
@@ -641,7 +887,7 @@ Return JSON matching the schema.`;
             },
           },
         },
-        ['gemini-2.5-flash', 'gemini-2.0-flash'],
+        ['gemini-3.8-flash', 'gemini-3.1-flash-lite'],
         2
       );
 
@@ -685,7 +931,7 @@ Return JSON matching the schema.`;
             },
           },
         },
-        ['gemini-2.5-flash', 'gemini-2.0-flash'],
+        ['gemini-3.8-flash-lite-tts', 'gemini-3.8-flash'],
         2
       );
 
@@ -747,7 +993,7 @@ Return ONLY a valid JSON object matching this schema:
             ],
           },
         },
-        ['gemini-2.5-flash', 'gemini-2.0-flash'],
+        ['gemini-3.5-transcribe', 'gemini-3.8-flash', 'gemini-2.5-flash'],
         2
       );
 
